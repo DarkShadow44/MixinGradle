@@ -51,6 +51,22 @@ public class MixinEclipse {
             return
         }
         
+        def eclipseAptPlugin = project.plugins.findPlugin('com.diffplug.eclipse.apt')
+        if (eclipseAptPlugin) {
+            def settings = project.tasks.register('mixinEclipseJdtApt', EclipseJdtAptTask.class) {
+                description = 'Creates the Eclipse JDT APT settings file'
+                output = project.file('.settings/org.eclipse.jdt.apt.core.prefs')
+                mappingsIn = extension.mappings
+                dependsOn project.tasks.createSrgToMcp
+                dependsOn project.tasks.createMcpToSrg
+                dependsOn project.tasks.eclipseJdtApt
+                hasDiffplug = true
+            }
+            project.tasks.eclipse.dependsOn(settings)
+            return
+        }
+        project.logger.warn '[MixinGradle] Use \'com.diffplug.eclipse.apt\' gradle plugin for full annotation support within eclipse'
+
         eclipseModel.jdt.file.withProperties { it.setProperty('org.eclipse.jdt.core.compiler.processAnnotations', 'enabled') }
         def settings = project.tasks.register('eclipseJdtApt', EclipseJdtAptTask.class) {
             description = 'Creates the Eclipse JDT APT settings file'
@@ -88,25 +104,28 @@ public class MixinEclipse {
     
     static class EclipseJdtAptTask extends DefaultTask {
         @InputFile File mappingsIn
-        @Input File refmapOut = project.file("build/${name}/mixins.refmap.json")
-        @Input File mappingsOut = project.file("build/${name}/mixins.mappings.tsrg")
+        @OutputFile File refmapOut = project.file("build/${name}/mixins.refmap.json")
+        @OutputFile File mappingsOut = project.file("build/${name}/mixins.mappings.tsrg")
         @Input Map<String, String> processorOptions = new TreeMap<>()
         
-        @Input File genTestDir = project.file('build/.apt_generated_test')
-        @Input File genDir = project.file('build/.apt_generated')
+        @OutputFile File genTestDir = project.file('build/.apt_generated_test')
+        @OutputFile File genDir = project.file('build/.apt_generated')
         
         @OutputFile File output
         
+        @Input boolean hasDiffplug = false;
         
         @TaskAction
         def run() {
             MixinExtension extension = project.extensions.findByType(MixinExtension.class)
             def props = new OrderedProperties()
-            props.put('eclipse.preferences.version', '1')
-            props.put('org.eclipse.jdt.apt.aptEnabled', 'true')
-            props.put('org.eclipse.jdt.apt.reconcileEnabled', 'true')
-            props.put('org.eclipse.jdt.apt.genSrcDir', genDir.canonicalPath)
-            props.put('org.eclipse.jdt.apt.genSrcTestDir', genTestDir.canonicalPath)
+            if (!hasDiffplug) {
+                props.put('eclipse.preferences.version', '1')
+                props.put('org.eclipse.jdt.apt.aptEnabled', 'true')
+                props.put('org.eclipse.jdt.apt.reconcileEnabled', 'true')
+                props.put('org.eclipse.jdt.apt.genSrcDir', genDir.canonicalPath)
+                props.put('org.eclipse.jdt.apt.genSrcTestDir', genTestDir.canonicalPath)
+            }
             props.arg('reobfTsrgFile', mappingsIn.canonicalPath)
             props.arg('outTsrgFile', mappingsOut.canonicalPath)
             props.arg('outRefMapFile', refmapOut.canonicalPath)
@@ -151,7 +170,7 @@ public class MixinEclipse {
             }
             */
             
-            props.store(output.newWriter(), null)
+            props.store(output.newWriter(hasDiffplug), null)
         }
     }
 
